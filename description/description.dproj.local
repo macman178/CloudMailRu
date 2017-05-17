@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+  <Transactions>
+    <Transaction>2017.05.09 19:49:17.886,=C:\Users\Pozitronik\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>2017.05.09 19:49:34.489,D:\WORK\CODE\CloudMailRu\description\main.pas=C:\Users\Pozitronik\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>2017.05.09 19:49:34.489,D:\WORK\CODE\CloudMailRu\description\main.dfm=C:\Users\Pozitronik\Documents\Embarcadero\Studio\Projects\Unit1.dfm</Transaction>
+    <Transaction>2017.05.09 19:49:40.452,D:\WORK\CODE\CloudMailRu\description\description.dproj=C:\Users\Pozitronik\Documents\Embarcadero\Studio\Projects\Project1.dproj</Transaction>
+  </Transactions>
+</BorlandProject>
