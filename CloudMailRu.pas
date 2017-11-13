@@ -724,7 +724,7 @@ begin
 	self.ExternalSourceName := PWideChar(remotePath);
 	self.ExternalTargetName := PWideChar(localPath);
 
-	if self.crypt_files then //Загрузка файла в память, дешифрация в файл
+	if not self.crypt_files then //Загрузка файла в память, дешифрация в файл
 	begin
 		MemoryStream := TMemoryStream.Create;
 		Result := self.HTTPGetFile(self.Shard + PathToUrl(remotePath, false), MemoryStream, LogErrors);
