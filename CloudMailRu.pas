@@ -142,6 +142,7 @@ type
 		class function CloudAccessToString(access: WideString; Invert: Boolean = false): WideString; static;
 		class function StringToCloudAccess(accessString: WideString; Invert: Boolean = false): integer; static;
 		class function ErrorCodeText(ErrorCode: integer): WideString; static;
+		class function OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
 	end;
 
 implementation
@@ -926,6 +927,8 @@ procedure TCloudMailRu.HTTPInit(var HTTP: TIdHTTP; var SSL: TIdSSLIOHandlerSocke
 begin
 	SSL := TIdSSLIOHandlerSocketOpenSSL.Create();
 	SSL.SSLOptions.VerifyMode := [];
+	SSL.OnVerifyPeer := TCloudMailRu.OnSSLVerifyPeer;
+
 	HTTP := TIdHTTP.Create();
 	if (self.Proxy.ProxyType in SocksProxyTypes) and (self.Socks.Enabled) then
 		SSL.TransparentProxy := self.Socks;
@@ -2061,6 +2064,11 @@ begin
 	if (not Aborted) then
 		Result := UpperCase(sha1.HashAsString);
 	sha1.Reset;
+end;
+
+class function TCloudMailRu.OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
+begin
+	Result := true;
 end;
 
 end.
