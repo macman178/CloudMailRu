@@ -142,7 +142,7 @@ type
 		class function CloudAccessToString(access: WideString; Invert: Boolean = false): WideString; static;
 		class function StringToCloudAccess(accessString: WideString; Invert: Boolean = false): integer; static;
 		class function ErrorCodeText(ErrorCode: integer): WideString; static;
-		class function OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
+		function OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
 	end;
 
 implementation
@@ -927,7 +927,7 @@ procedure TCloudMailRu.HTTPInit(var HTTP: TIdHTTP; var SSL: TIdSSLIOHandlerSocke
 begin
 	SSL := TIdSSLIOHandlerSocketOpenSSL.Create();
 	SSL.SSLOptions.VerifyMode := [];
-	SSL.OnVerifyPeer := TCloudMailRu.OnSSLVerifyPeer;
+	SSL.OnVerifyPeer := OnSSLVerifyPeer;
 
 	HTTP := TIdHTTP.Create();
 	if (self.Proxy.ProxyType in SocksProxyTypes) and (self.Socks.Enabled) then
@@ -2066,8 +2066,9 @@ begin
 	sha1.Reset;
 end;
 
-class function TCloudMailRu.OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
+function TCloudMailRu.OnSSLVerifyPeer(Certificate: TIdX509; AOk: Boolean; ADepth, AError: integer): Boolean;
 begin
+	Log(LogLevelDetail, MSGTYPE_DETAILS, 'SSL verify peer: AOk=' + BoolToStr(AOk) + ', ADepth= ' + IntToStr(ADepth) + ', AError=' + IntToStr(AError));
 	Result := true;
 end;
 
