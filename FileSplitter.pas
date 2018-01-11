@@ -3,7 +3,7 @@
 interface
 
 uses
-	System.SysUtils, System.Classes, MRC_Helper, Winapi.Windows, PLUGIN_TYPES;
+	System.SysUtils, System.Classes, MRC_Helper, Winapi.Windows;
 
 Const
 	CRCSeed = $FFFFFFFF;
@@ -13,38 +13,44 @@ Const
 		$F6B9265B, $6FB077E1, $18B74777, $88085AE6, $FF0F6A70, $66063BCA, $11010B5C, $8F659EFF, $F862AE69, $616BFFD3, $166CCF45, $A00AE278, $D70DD2EE, $4E048354, $3903B3C2, $A7672661, $D06016F7, $4969474D, $3E6E77DB, $AED16A4A, $D9D65ADC, $40DF0B66, $37D83BF0, $A9BCAE53, $DEBB9EC5, $47B2CF7F, $30B5FFE9, $BDBDF21C, $CABAC28A, $53B39330, $24B4A3A6, $BAD03605, $CDD70693, $54DE5729, $23D967BF, $B3667A2E, $C4614AB8, $5D681B02, $2A6F2B94, $B40BBE37, $C30C8EA1, $5A05DF1B, $2D02EF8D);
 
 type
-	TFilePart = record
-		filename: WideString;
-		filesize: Int64;
+
+	//part of file
+	TFileChunkInfo = record
+		name: WideString; //filename.000
+		start: Int64; //offset from beginning of original file
+		size: Int64; //part size
 	end;
 
-	TSplittedFile = record
-		filename: WideString;
-		size: Int64;
-		crc32: WideString; //String representation
+	AFileChunkInfo = array of TFileChunkInfo;
 
-		path: WideString; //Path to temp dir with splited files
-		parts: array of TFilePart; //parts names
+	TFileChunk = class//оборачиваем TFileChunkInfo в класс для возможности определения значения по умолчанию (nil)
+	public
+		info: TFileChunkInfo;
 	end;
 
 	TFileSplitter = class
 	private
-		Splitted: TSplittedFile;
-		PartSize: Int64;
-		totalPartsCount: Int64;
-		ExternalProgressProc: TProgressHandler;
+		Chunks: AFileChunkInfo; //parts names
+		ChunkSize: Int64;
+		TotalPartsCount: Int64;
+		filename: WideString;
+		filesize: Int64;
+		crc32: WideString;
 
-		function AddLeadingZeroes(const aNumber, Length: Integer): string;
+		function AddLeadingZeroes(const aNumber, length: Integer): string;
 		function crc32_update(inbuffer: pointer; buffersize, crc: DWord): DWord;
 		function CRCend(crc: DWord): DWord;
+		function GetCRC32File(filename: WideString): WideString;
+		function GetCRCFileName(): WideString;
+
 	public
-		constructor Create(filename: WideString; SplitSize: Int64; ExternalProgressProc: TProgressHandler = nil);
+		property PartsCount: Int64 read TotalPartsCount;
+		property GetChunks: AFileChunkInfo read Chunks;
+		property CRCFileName: WideString read GetCRCFileName;
+		constructor Create(filename: WideString; ChunkSize: Int64);
 		destructor Destroy; override;
-		function split(): Integer;
-		function getSplittedPart(partNumber: Integer; var partStream: TFileStream): Integer; {Get nth part as tfilestream without splitting of all file}
-		function getCRC32File(filename: WideString): WideString;
-		function writeCRCFile: WideString;
-		property SplitResult: TSplittedFile read Splitted;
+
+		procedure GetCRCData(DataStream: TStream);
 
 	end;
 
@@ -52,9 +58,41 @@ implementation
 
 {TFileSplitter}
 
-function TFileSplitter.AddLeadingZeroes(const aNumber, Length: Integer): string;
+constructor TFileSplitter.Create(filename: WideString; ChunkSize: Int64);
+var
+	partCount: Integer;
 begin
-	result := System.SysUtils.Format('%.*d', [Length, aNumber]);
+	if not(FileExists(filename)) then
+		raise Exception.Create('File not exits');
+
+	self.ChunkSize := ChunkSize;
+	self.filename := filename;
+	self.filesize := SizeOfFile(filename);
+
+	self.TotalPartsCount := self.filesize div self.ChunkSize;
+	if (self.filesize mod self.ChunkSize) <> 0 then
+		inc(self.TotalPartsCount);
+
+	SetLength(self.Chunks, self.TotalPartsCount);
+	for partCount := 0 to self.TotalPartsCount - 1 do
+	begin
+		with self.Chunks[partCount] do
+		begin
+			name := ExtractFileName(ChangeFileExt(self.filename, '.' + self.AddLeadingZeroes(partCount + 1, 3)));
+			start := partCount * ChunkSize;
+			if (partCount = self.TotalPartsCount - 1) then
+				size := self.filesize - (ChunkSize * (self.TotalPartsCount - 1))
+			else
+				size := ChunkSize;
+
+		end;
+	end;
+
+end;
+
+function TFileSplitter.AddLeadingZeroes(const aNumber, length: Integer): string;
+begin
+	result := System.SysUtils.Format('%.*d', [length, aNumber]);
 end;
 
 function TFileSplitter.crc32_update(inbuffer: pointer; buffersize, crc: DWord): DWord;
@@ -90,42 +128,12 @@ begin
 	CRCend := (crc xor CRCSeed);
 end;
 
-constructor TFileSplitter.Create(filename: WideString; SplitSize: Int64; ExternalProgressProc: TProgressHandler = nil);
-begin
-	//TODO проверка на существование
-	self.PartSize := SplitSize;
-	self.Splitted.filename := filename;
-	self.Splitted.size := SizeOfFile(filename);
-	self.ExternalProgressProc := ExternalProgressProc;
-
-	self.totalPartsCount := self.Splitted.size div self.PartSize;
-	if (self.Splitted.size mod self.PartSize) <> 0 then
-		inc(self.totalPartsCount);
-
-	self.Splitted.path := IncludeTrailingBackslash(GetTmpDir + GetCurrentProcessId.ToString());
-	if not DirectoryExists(self.Splitted.path) then
-	begin
-		if not CreateDir(self.Splitted.path) then
-			Raise Exception.CreateFmt('Can''t create temp directory : ''%s''', [self.Splitted.path]);
-	end;
-	//self.Splitted.crc32 := self.getCRC32File(filename);
-end;
-
 destructor TFileSplitter.Destroy;
-var
-	SplittedPartIndex: Integer;
 begin
-	for SplittedPartIndex := 0 to Length(self.SplitResult.parts) - 1 do
-	begin
-		if FileExists(self.SplitResult.parts[SplittedPartIndex].filename) then
-			DeleteFileW(PWideChar(self.SplitResult.parts[SplittedPartIndex].filename));
-	end;
-	if FileExists(self.Splitted.path + ChangeFileExt(ExtractFileName(self.Splitted.filename), '.crc')) then
-		DeleteFileW(PWideChar(self.Splitted.path + ChangeFileExt(ExtractFileName(self.Splitted.filename), '.crc')));
 	inherited;
 end;
 
-function TFileSplitter.getCRC32File(filename: WideString): WideString;
+function TFileSplitter.GetCRC32File(filename: WideString): WideString;
 var
 	inFile: file;
 	CRCValue: DWord;
@@ -146,97 +154,17 @@ begin //todo: change to TFileStream (just for code sameness
 	exit(IntToHex(CRCValue, 8));
 end;
 
-function TFileSplitter.getSplittedPart(partNumber: Integer; var partStream: TFileStream): Integer;
+procedure TFileSplitter.GetCRCData(DataStream: TStream);
 var
-	PartSize: Int64;
-	FStream: TFileStream;
+	Content: WideString;
 begin
-	try
-		FStream := TFileStream.Create(self.Splitted.filename, fmOpenRead or fmShareDenyWrite);
-	except
-		exit(FS_FILE_READERROR);
-	end;
-	if partNumber >= self.totalPartsCount then
-		exit(FS_FILE_NOTSUPPORTED);
-
-	FStream.Position := self.PartSize * partNumber;
-
-	if partNumber = self.totalPartsCount - 1 then //last part of file
-	begin
-		PartSize := self.Splitted.size - (self.PartSize * partNumber);
-	end
-	else
-		PartSize := self.PartSize;
-	partStream.CopyFrom(FStream, PartSize);
-	result := FS_FILE_OK;
+	Content := 'filename=' + ExtractFileName(self.filename) + sLineBreak + 'size=' + self.filesize.ToString + sLineBreak + 'crc32=' + self.GetCRC32File(self.filename);
+	DataStream.Write(Content, length(Content));
 end;
 
-function TFileSplitter.split: Integer;
-var
-	partsCount: Integer;
-	FStream, WStream: TFileStream;
-	PartName: WideString;
-	PartSize: Int64;
-	Percent: Integer;
+function TFileSplitter.GetCRCFileName: WideString;
 begin
-
-	try
-		FStream := TFileStream.Create(self.Splitted.filename, fmOpenRead or fmShareDenyWrite);
-	except
-		exit(FS_FILE_READERROR);
-	end;
-	FStream.Position := 0;
-
-	SetLength(self.Splitted.parts, self.totalPartsCount);
-	for partsCount := 0 to self.totalPartsCount - 1 do
-	begin
-		PartName := self.Splitted.path + ExtractFileName(ChangeFileExt(self.Splitted.filename, '.' + self.AddLeadingZeroes(partsCount + 1, 3)));
-		if Assigned(self.ExternalProgressProc) then
-		begin
-			Percent := 100 * partsCount div self.totalPartsCount;
-			if ExternalProgressProc(PWideChar('Splitting ' + self.Splitted.filename), PWideChar((partsCount + 1).ToString + ' of ' + self.totalPartsCount.ToString), Percent) = 1 then
-			begin //отменили разбивку
-				FStream.Destroy;
-				exit(FS_FILE_USERABORT);
-			end;
-		end;
-
-		try
-			WStream := TFileStream.Create(PartName, fmCreate);
-		except
-			exit(FS_FILE_WRITEERROR);
-		end;
-		FStream.Position := self.PartSize * partsCount;
-		if partsCount = self.totalPartsCount - 1 then //last part of file
-		begin
-			PartSize := self.Splitted.size - (self.PartSize * partsCount);
-		end
-		else
-			PartSize := self.PartSize;
-		try
-			WStream.CopyFrom(FStream, PartSize);
-		except
-			FStream.Destroy;
-			Raise Exception.CreateFmt('Can''t write to temp file : ''%s''', [WStream.filename]);
-			exit(FS_FILE_WRITEERROR);
-		end;
-		WStream.Destroy;
-		self.Splitted.parts[partsCount].filename := PartName;
-		self.Splitted.parts[partsCount].filesize := PartSize;
-	end;
-	FStream.Destroy;
-	result := FS_FILE_OK;
-end;
-
-function TFileSplitter.writeCRCFile: WideString;
-var
-	content: TStringList;
-begin
-	content := TStringList.Create;
-	content.Text := 'filename=' + ExtractFileName(self.Splitted.filename) + sLineBreak + 'size=' + self.SplitResult.size.ToString + sLineBreak + 'crc32=' + self.getCRC32File(self.Splitted.filename);
-	result := self.Splitted.path + ChangeFileExt(ExtractFileName(self.Splitted.filename), '.crc');
-	content.SaveToFile(result);
-	content.Destroy;
+	result := ExtractFileName(ChangeFileExt(self.filename, '.crc'));
 end;
 
 end.
