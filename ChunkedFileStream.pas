@@ -31,6 +31,7 @@ begin
 	self.ChunkSize := ChunkSize;
 
 	inherited Create(AFileName, Mode);
+	self.SetPosition(0);
 
 end;
 
@@ -66,12 +67,20 @@ end;
 
 function TChunkedFileStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
 begin
-	result := FileSeek(FHandle, Offset + self.ChunkStart, Ord(Origin));
+	result := 0;
+	case Origin of
+		soBeginning:
+			result := FileSeek(FHandle, Offset + self.ChunkStart, Ord(Origin));
+		soCurrent:
+			result := FileSeek(FHandle, Offset, Ord(Origin));
+		soEnd:
+			result := FileSeek(FHandle, self.ChunkStart + self.ChunkSize - Offset, Ord(Origin));
+	end;
 end;
 
 function TChunkedFileStream.GetPosition: Int64;
 begin
-	result := self.Seek(0, soCurrent) - self.ChunkStart;
+	result := self.Seek(0, soCurrent);
 end;
 
 procedure TChunkedFileStream.SetPosition(const Pos: Int64);

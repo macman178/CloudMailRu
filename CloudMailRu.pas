@@ -1227,7 +1227,6 @@ var
 	ContentLength: int64;
 	Percent: integer;
 begin
-	exit;
 	HTTP := TIdHTTP(ASender);
 	if AWorkMode = wmRead then
 		ContentLength := HTTP.Response.ContentLength
